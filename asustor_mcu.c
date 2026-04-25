@@ -21,6 +21,7 @@
 #include <linux/platform_device.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
+#include <linux/workqueue.h>
 
 #include "asustor_mcu.h"
 
@@ -61,6 +62,9 @@ struct asustor_mcu {
 	/* hwmon */
 	struct device *hwmon_dev;
 	u8 fan_pwm;		/* cached PWM value */
+
+	struct work_struct init_work;	/* deferred fan PWM set/get + LED reg */
+	unsigned int leds_registered;	/* number of LEDs successfully registered */
 };
 
 /*
@@ -459,12 +463,62 @@ static struct mcu_led mcu_leds[] = {
 
 /* ---- Init / Cleanup ---- */
 
+/*
+ * Setting and reading back the fan PWM at boot is the slowest part of MCU
+ * init (~2 s in total). The MCU is responsive the whole time — each command
+ * is just slow — so we defer this to a workqueue and let module init return
+ * immediately. Any concurrent hwmon access from userspace simply queues
+ * behind mcu->lock as normal.
+ *
+ * LED registration is also deferred so that LED default triggers (which
+ * fire synchronously inside led_classdev_register and issue MCU commands)
+ * don't extend insmod time. Until this worker finishes, the LED sysfs
+ * nodes simply don't exist; userspace gets a clean -ENOENT instead of
+ * blocking on mcu->lock for ~2 s.
+ */
+static void mcu_init_work(struct work_struct *work)
+{
+	struct asustor_mcu *mcu = container_of(work, struct asustor_mcu,
+					       init_work);
+	int ret, i;
+
+	/*
+	 * Register LEDs first so they appear in sysfs as soon as possible
+	 * (and the panic trigger on red:status gets wired up early). Their
+	 * default triggers may issue MCU commands synchronously, but that's
+	 * fine here off the init path.
+	 */
+	for (i = 0; i < ARRAY_SIZE(mcu_leds); i++) {
+		ret = led_classdev_register(NULL, &mcu_leds[i].cdev);
+		if (ret) {
+			dev_warn(&mcu->pdev->dev,
+				 "failed to register LED %s: %d\n",
+				 mcu_leds[i].cdev.name, ret);
+			break;
+		}
+	}
+	mcu->leds_registered = i;
+
+	ret = mcu_fan_set_pwm(mcu, MCU_FAN_DEFAULT_PWM);
+	if (ret < 0)
+		dev_warn(&mcu->pdev->dev,
+			 "failed to set default fan PWM: %d\n", ret);
+	ret = mcu_fan_get_pwm(mcu);
+	if (ret < 0)
+		dev_warn(&mcu->pdev->dev,
+			 "failed to read initial fan PWM: %d\n", ret);
+
+	dev_info(&mcu->pdev->dev,
+		 "MCU ready, fan PWM: %d, %u/%zu LEDs registered\n",
+		 mcu->fan_pwm, mcu->leds_registered, ARRAY_SIZE(mcu_leds));
+}
+
 int __init asustor_mcu_init(void)
 {
 	struct asustor_mcu *mcu;
 	struct file *f;
 	struct platform_device *pdev;
-	int ret, i;
+	int ret;
 
 	pr_info("initializing MCU on %s\n", MCU_SERIAL_PORT);
 
@@ -473,6 +527,7 @@ int __init asustor_mcu_init(void)
 		return -ENOMEM;
 
 	mutex_init(&mcu->lock);
+	INIT_WORK(&mcu->init_work, mcu_init_work);
 
 	/* Open serial port */
 	f = mcu_serial_open();
@@ -501,31 +556,17 @@ int __init asustor_mcu_init(void)
 		goto err_pdev;
 	}
 
-	/* Register MCU LEDs */
-	for (i = 0; i < ARRAY_SIZE(mcu_leds); i++) {
-		ret = led_classdev_register(NULL, &mcu_leds[i].cdev);
-		if (ret) {
-			dev_err(&pdev->dev, "failed to register LED %s: %d\n",
-				mcu_leds[i].cdev.name, ret);
-			goto err_leds;
-		}
-	}
+	/*
+	 * Apply the default fan speed, read it back, and register the LEDs
+	 * asynchronously so module init doesn't block on slow MCU round-trips
+	 * (~2 s) or on synchronous LED default-trigger commands.
+	 */
+	schedule_work(&mcu->init_work);
 
-	/* Apply a sane startup speed, then read back the current PWM for logging. */
-	ret = mcu_fan_set_pwm(mcu, MCU_FAN_DEFAULT_PWM);
-	if (ret < 0)
-		dev_warn(&pdev->dev, "failed to set default fan PWM: %d\n", ret);
-	ret = mcu_fan_get_pwm(mcu);
-	if (ret < 0)
-		dev_warn(&pdev->dev, "failed to read initial fan PWM: %d\n", ret);
-	dev_info(&pdev->dev, "MCU initialized, fan PWM: %d\n", mcu->fan_pwm);
+	dev_info(&pdev->dev, "MCU initialized\n");
 
 	return 0;
 
-err_leds:
-	while (--i >= 0)
-		led_classdev_unregister(&mcu_leds[i].cdev);
-	hwmon_device_unregister(mcu->hwmon_dev);
 err_pdev:
 	platform_device_unregister(mcu->pdev);
 err_serial:
@@ -545,7 +586,10 @@ void __exit asustor_mcu_cleanup(void)
 	if (!mcu)
 		return;
 
-	for (i = 0; i < ARRAY_SIZE(mcu_leds); i++)
+	/* Make sure the deferred init work isn't still touching the MCU. */
+	cancel_work_sync(&mcu->init_work);
+
+	for (i = 0; i < mcu->leds_registered; i++)
 		led_classdev_unregister(&mcu_leds[i].cdev);
 
 	hwmon_device_unregister(mcu->hwmon_dev);

@@ -36,6 +36,7 @@
 #include <linux/string.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
+#include <linux/workqueue.h>
 
 #include "asustor_lcm.h"
 
@@ -69,6 +70,14 @@
 /* Maximum time to wait for an ACK from the LCD controller */
 #define LCM_ACK_TIMEOUT_MS	500
 
+/*
+ * Upper bound on cold-boot probe time. The controller takes ~2 s to come
+ * up after the enable GPIO is raised; we poll with 500 ms ACK timeouts
+ * for up to 5 s. Wait a little longer here so callers always observe a
+ * definitive result rather than a spurious timeout.
+ */
+#define LCM_PROBE_WAIT_MS	6000
+
 struct asustor_lcm {
 	struct mutex write_lock;	/* serializes writes to the tty */
 	struct file *tty_filp;
@@ -80,6 +89,9 @@ struct asustor_lcm {
 	struct completion ack_done;	/* fired by rx thread on F1 ACK */
 	u8 ack_status;			/* status byte from last F1 ACK */
 	unsigned int rx_errs;		/* count of rx protocol/checksum errors */
+	struct work_struct probe_work;	/* async cold-boot probe */
+	struct completion probe_done;	/* fired when probe_work finishes */
+	bool probe_ok;			/* true if controller ACKed during probe */
 };
 
 static struct asustor_lcm *lcm_data;
@@ -162,9 +174,17 @@ static int lcm_write_raw(struct asustor_lcm *lcm, const u8 *buf, int len)
  * The rx thread is the sole reader of the tty; it parses incoming bytes
  * and fires lcm->ack_done when it sees an F1 frame. We just need to
  * write our frame and wait for the completion.
+ *
+ * NB: this is the low-level path. It does NOT wait for the async probe
+ * to finish, so the probe worker can use it directly. User-facing
+ * callers (sysfs) must go through lcm_send_frame() which gates on
+ * lcm->probe_done first.
+ *
+ * @quiet suppresses the timeout warning; the probe worker uses it to
+ * avoid spamming dmesg while polling a controller that hasn't woken up.
  */
-static int lcm_send_frame(struct asustor_lcm *lcm, u8 cmd,
-			   const u8 *data, int data_len)
+static int __lcm_send_frame(struct asustor_lcm *lcm, u8 cmd,
+			    const u8 *data, int data_len, bool quiet)
 {
 	u8 frame[LCM_FRAME_MAX_SIZE];
 	int frame_len;
@@ -193,13 +213,36 @@ static int lcm_send_frame(struct asustor_lcm *lcm, u8 cmd,
 	if (!wait_for_completion_timeout(&lcm->ack_done,
 					 msecs_to_jiffies(LCM_ACK_TIMEOUT_MS))) {
 		mutex_unlock(&lcm->write_lock);
-		pr_warn_ratelimited("timeout waiting for ACK to cmd 0x%02x\n",
-				    cmd);
+		if (!quiet)
+			pr_warn_ratelimited("timeout waiting for ACK to cmd 0x%02x\n",
+					    cmd);
 		return -ETIMEDOUT;
 	}
 	mutex_unlock(&lcm->write_lock);
 
 	return 0;
+}
+
+/*
+ * User-facing send path. Blocks until the async probe has finished, so
+ * callers never race the controller's ~2 s cold-boot wake-up. Returns
+ * -ENODEV if the controller never ACKed during the probe window.
+ */
+static int lcm_send_frame(struct asustor_lcm *lcm, u8 cmd,
+			  const u8 *data, int data_len)
+{
+	long rc;
+
+	rc = wait_for_completion_interruptible_timeout(&lcm->probe_done,
+		msecs_to_jiffies(LCM_PROBE_WAIT_MS));
+	if (rc < 0)
+		return rc;		/* -ERESTARTSYS */
+	if (rc == 0)
+		return -ETIMEDOUT;
+	if (!lcm->probe_ok)
+		return -ENODEV;
+
+	return __lcm_send_frame(lcm, cmd, data, data_len, false);
 }
 
 /* Send an F1 ACK response for a received F0 frame. Takes write_lock. */
@@ -464,6 +507,53 @@ static const struct attribute_group asustor_lcm_attr_group = {
 	.attrs = asustor_lcm_attrs,
 };
 
+/* ---- Async cold-boot probe ---- */
+
+/*
+ * The LCD controller takes ~2 s after the enable GPIO is raised before it
+ * responds to commands. Doing this synchronously in module init blocks
+ * boot for ~2 s on cold start (warm reload returns on the first try).
+ *
+ * Run the probe on a workqueue instead and gate user-facing senders on
+ * lcm->probe_done. Button events that arrive before the probe completes
+ * are simply dropped on the floor — the rx thread is already running, but
+ * has nothing meaningful to do until the controller is responsive.
+ */
+static void lcm_probe_work(struct work_struct *work)
+{
+	struct asustor_lcm *lcm = container_of(work, struct asustor_lcm,
+					       probe_work);
+	unsigned long deadline = jiffies + msecs_to_jiffies(5000);
+	u8 on = 1, zero = 0;
+	int ret;
+
+	do {
+		ret = __lcm_send_frame(lcm, LCM_CMD_POWER, &on, 1, true);
+		if (ret == 0)
+			break;
+		if (ret != -ETIMEDOUT)
+			break;
+	} while (time_before(jiffies, deadline));
+
+	if (ret) {
+		dev_warn(&lcm->pdev->dev,
+			 "LCD did not respond to power-on: %d\n", ret);
+		goto out;
+	}
+
+	msleep(15);
+	ret = __lcm_send_frame(lcm, LCM_CMD_CLEAR, &zero, 1, false);
+	if (ret) {
+		dev_warn(&lcm->pdev->dev, "LCD clear failed: %d\n", ret);
+		goto out;
+	}
+
+	lcm->probe_ok = true;
+	dev_info(&lcm->pdev->dev, "LCD controller ready\n");
+out:
+	complete_all(&lcm->probe_done);
+}
+
 /* ---- Init / Cleanup ---- */
 
 int __init asustor_lcm_init(void)
@@ -482,6 +572,8 @@ int __init asustor_lcm_init(void)
 
 	mutex_init(&lcm->write_lock);
 	init_completion(&lcm->ack_done);
+	init_completion(&lcm->probe_done);
+	INIT_WORK(&lcm->probe_work, lcm_probe_work);
 
 	/* Open serial port */
 	f = lcm_serial_open();
@@ -555,32 +647,11 @@ int __init asustor_lcm_init(void)
 	}
 
 	/*
-	 * The LCD controller takes ~2 s after the enable GPIO is raised
-	 * before it responds to commands. Probe with the power-on command
-	 * until it ACKs (or we hit the timeout). On a warm reload the
-	 * controller is already up, so this returns on the first try.
+	 * Kick off the controller probe asynchronously so module init
+	 * returns immediately. User-facing senders (sysfs) wait on
+	 * lcm->probe_done before issuing frames.
 	 */
-	{
-		unsigned long deadline = jiffies + msecs_to_jiffies(5000);
-		u8 on = 1, zero = 0;
-
-		do {
-			ret = lcm_send_frame(lcm, LCM_CMD_POWER, &on, 1);
-			if (ret == 0)
-				break;
-			if (ret != -ETIMEDOUT)
-				break;
-		} while (time_before(jiffies, deadline));
-		if (ret) {
-			dev_warn(&pdev->dev, "LCD did not respond to power-on: %d\n",
-				 ret);
-		} else {
-			msleep(15);
-			ret = lcm_send_frame(lcm, LCM_CMD_CLEAR, &zero, 1);
-			if (ret)
-				dev_warn(&pdev->dev, "LCD clear failed: %d\n", ret);
-		}
-	}
+	schedule_work(&lcm->probe_work);
 
 	dev_info(&pdev->dev,
 		 "LCM initialized (16x2 display + 4 buttons on %s at 9600 baud)\n",
@@ -614,6 +685,12 @@ void __exit asustor_lcm_cleanup(void)
 
 	if (!lcm)
 		return;
+
+	/*
+	 * Make sure the async probe is done before tearing anything down.
+	 * It uses the tty, the platform device and the rx thread.
+	 */
+	cancel_work_sync(&lcm->probe_work);
 
 	if (lcm->rx_thread)
 		kthread_stop(lcm->rx_thread);
