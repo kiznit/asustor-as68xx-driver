@@ -1,0 +1,18 @@
+[Unit]
+Description=Sync AS68xxT bay error LEDs to ZFS pool state
+Documentation=https://github.com/kzinti/asustor-platform-driver
+# Run after pools are imported and ZED is up, so `zpool status` is meaningful.
+After=zfs-import.target zfs-mount.service zed.service
+Wants=zfs.target
+ConditionPathExists=/sys/class/leds/sata1:red:disk
+ConditionPathExists=/usr/local/sbin/asustor-zfs-sync-leds
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/asustor-zfs-sync-leds
+# Also resync after wake-from-suspend or manual `systemctl reload`.
+ExecReload=/usr/local/sbin/asustor-zfs-sync-leds
+RemainAfterExit=no
+
+[Install]
+WantedBy=zfs.target

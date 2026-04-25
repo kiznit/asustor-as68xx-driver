@@ -1,0 +1,96 @@
+#!/bin/sh
+# asustor-bay-led — set the red error LED on an AS68xxT bay.
+#
+# Usage:
+#     asustor-bay-led <bay-number-or-device> <off|on|blink>
+#
+# Examples:
+#     asustor-bay-led 3 on
+#     asustor-bay-led /dev/sda blink
+#     asustor-bay-led /dev/disk/by-path/pci-0000:06:00.0-ata-2 off
+#     asustor-bay-led /dev/disk/by-id/ata-WDC_... on
+#
+# States:
+#     off    - solid off (drive healthy / bay empty)
+#     on     - solid red (drive faulted / unavailable)
+#     blink  - 1 Hz red (drive degraded / suspect)
+#
+# Resolves the input to a bay number 1..N by walking
+# /dev/disk/by-path/*-ata-N symlinks, then writes /sys/class/leds.
+
+set -eu
+
+LED_DIR=/sys/class/leds
+BLINK_MS=500
+
+usage() {
+	echo "usage: $0 <bay|device> <off|on|blink>" >&2
+	exit 2
+}
+
+[ $# -eq 2 ] || usage
+
+target=$1
+state=$2
+
+# Resolve target -> bay number.
+case "$target" in
+1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)
+	bay=$target
+	;;
+*)
+	# Resolve symlink chains (by-id -> by-path -> sdX, or sdX directly)
+	# down to a real /dev/sdX, then find the by-path entry that matches.
+	dev=$(readlink -f -- "$target" 2>/dev/null || true)
+	if [ -z "$dev" ] || [ ! -b "$dev" ]; then
+		echo "$0: '$target' is not a block device or known bay" >&2
+		exit 1
+	fi
+	bay=
+	for link in /dev/disk/by-path/*-ata-[0-9]*; do
+		[ -e "$link" ] || continue
+		# Skip partition links (ata-N-partM) and dotted forms (ata-N.0).
+		case "$link" in
+		*-part[0-9]*) continue ;;
+		*.[0-9]*) continue ;;
+		esac
+		linktarget=$(readlink -f -- "$link" 2>/dev/null || true)
+		if [ "$linktarget" = "$dev" ]; then
+			bay=${link##*-ata-}
+			break
+		fi
+	done
+	if [ -z "$bay" ]; then
+		echo "$0: cannot map $target -> bay number (no by-path/*-ata-N match)" >&2
+		exit 1
+	fi
+	;;
+esac
+
+led=$LED_DIR/sata${bay}:red:disk
+if [ ! -d "$led" ]; then
+	echo "$0: LED $led not present (driver loaded? bay $bay supported?)" >&2
+	exit 1
+fi
+
+case "$state" in
+off)
+	echo none > "$led/trigger"
+	echo 0 > "$led/brightness"
+	;;
+on)
+	echo none > "$led/trigger"
+	echo 1 > "$led/brightness"
+	;;
+blink)
+	# ledtrig-timer may be a module on some distros.
+	[ -e "$led/delay_on" ] || modprobe ledtrig-timer 2>/dev/null || true
+	echo timer > "$led/trigger"
+	# delay_on/delay_off are created by the trigger switch above.
+	echo "$BLINK_MS" > "$led/delay_on"
+	echo "$BLINK_MS" > "$led/delay_off"
+	;;
+*)
+	usage
+	;;
+esac

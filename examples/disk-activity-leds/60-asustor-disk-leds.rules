@@ -1,0 +1,53 @@
+# Per-bay disk-activity LEDs for ASUSTOR AS68xxT.
+#
+# Binds each /dev/sdX backing a hard drive bay to its corresponding
+# `sataN:green:disk` LED via the `blkdev` LED trigger
+# (CONFIG_LEDS_TRIGGER_BLKDEV, kernel >= 6.2).
+#
+# Why this rule exists: the kernel's "disk-activity" trigger is global —
+# it blinks every LED bound to it on any disk I/O system-wide, so it
+# cannot indicate per-bay activity. The `blkdev` trigger does, but it
+# must be configured per-LED in userspace.
+#
+# Bay-to-port mapping (AS6804T / AS6806T / AS6808T / AS6810T):
+#   - All four models route the front bays through the on-board ASMedia
+#     SATA HBA(s) on PCI bus 06:00.0 (ASM1166 on 4/6/8-bay, 2x ASM1165
+#     on AS6810T).
+#   - Linux ATA port number (`ata-N`) tracks the silkscreen port number
+#     on the controller, which in turn matches the bay number on the
+#     chassis. Bay N == `pci-...-ata-N`.
+#
+# If your board uses a different controller layout (e.g. you replaced
+# the HBA), inspect `ls /dev/disk/by-path/` and adjust the ID_PATH
+# matches below.
+#
+# Install:
+#     sudo cp 60-asustor-disk-leds.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload
+#     sudo udevadm trigger --subsystem-match=block --action=add
+
+ACTION!="add|change",       GOTO="asustor_disk_leds_end"
+SUBSYSTEM!="block",         GOTO="asustor_disk_leds_end"
+ENV{DEVTYPE}!="disk",       GOTO="asustor_disk_leds_end"
+KERNEL!="sd*[!0-9]",        GOTO="asustor_disk_leds_end"
+
+ENV{ID_PATH}=="*-ata-1",    ENV{ASUSTOR_BAY}="1"
+ENV{ID_PATH}=="*-ata-2",    ENV{ASUSTOR_BAY}="2"
+ENV{ID_PATH}=="*-ata-3",    ENV{ASUSTOR_BAY}="3"
+ENV{ID_PATH}=="*-ata-4",    ENV{ASUSTOR_BAY}="4"
+ENV{ID_PATH}=="*-ata-5",    ENV{ASUSTOR_BAY}="5"
+ENV{ID_PATH}=="*-ata-6",    ENV{ASUSTOR_BAY}="6"
+# Bays 7-10 (AS6808T / AS6810T): uncomment once the disk-LED GPIO pins
+# for those bays have been mapped in asustor_gpio.c.
+#ENV{ID_PATH}=="*-ata-7",   ENV{ASUSTOR_BAY}="7"
+#ENV{ID_PATH}=="*-ata-8",   ENV{ASUSTOR_BAY}="8"
+#ENV{ID_PATH}=="*-ata-9",   ENV{ASUSTOR_BAY}="9"
+#ENV{ID_PATH}=="*-ata-10",  ENV{ASUSTOR_BAY}="10"
+
+ENV{ASUSTOR_BAY}=="?*", \
+    RUN+="/bin/sh -c 'led=/sys/class/leds/sata$env{ASUSTOR_BAY}:green:disk; \
+                      [ -d $led ] || exit 0; \
+                      echo blkdev > $led/trigger 2>/dev/null || exit 0; \
+                      echo %k > $led/link_device 2>/dev/null || true'"
+
+LABEL="asustor_disk_leds_end"

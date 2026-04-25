@@ -1,0 +1,53 @@
+#!/bin/sh
+# asustor-zfs-sync-leds — reconcile per-bay red error LEDs with ZFS state.
+#
+# Walks `zpool status -P` and sets each bay's red LED according to its
+# vdev state:
+#     ONLINE                                 -> off
+#     DEGRADED                               -> blink (1 Hz)
+#     FAULTED, UNAVAIL, REMOVED, OFFLINE     -> on
+#     anything else                          -> on (conservative)
+#
+# Bays not present in any pool are left untouched (so cold spares don't
+# get their LED forced off if you happened to set it manually).
+#
+# Run at boot via asustor-zfs-leds.service to handle the case where a
+# pool is imported already-degraded (no ZED statechange event fires in
+# that path), and on demand to refresh LEDs after manual action.
+
+set -u
+
+HELPER=${ASUSTOR_BAY_LED:-/usr/local/sbin/asustor-bay-led}
+
+if ! command -v zpool >/dev/null 2>&1; then
+	echo "$0: zpool not found; nothing to do" >&2
+	exit 0
+fi
+
+if [ ! -x "$HELPER" ]; then
+	echo "$0: $HELPER not found or not executable" >&2
+	exit 1
+fi
+
+# Collect "<bay> <state>" pairs for every device-backed vdev in any pool.
+# `zpool status -P` prints full /dev paths; -L resolves symlinks so the
+# helper's by-path lookup always sees a real /dev/sdX or /dev/nvmeXnY.
+zpool status -PL 2>/dev/null | awk '
+	$1 ~ /^\/dev\// {
+		print $1, $2
+	}
+' | while read -r dev state; do
+	# nvme drives have no per-bay LED; skip silently.
+	case "$dev" in
+	/dev/nvme*) continue ;;
+	esac
+
+	case "$state" in
+	ONLINE)         action=off   ;;
+	DEGRADED)       action=blink ;;
+	FAULTED | UNAVAIL | REMOVED | OFFLINE) action=on ;;
+	*)              action=on    ;;
+	esac
+
+	"$HELPER" "$dev" "$action" 2>/dev/null || true
+done

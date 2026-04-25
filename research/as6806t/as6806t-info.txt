@@ -1,0 +1,349 @@
+root@asustor:~# dmidecode -s system-manufacturer
+AMD
+root@asustor:~# dmidecode -s system-product-name
+Rembrandt
+root@asustor:~# dmidecode -s bios-vendor
+Phoenix Technologies Ltd.
+root@asustor:~# dmidecode -s bios-version
+V1.23 X64
+root@asustor:~# dmidecode -s bios-release-date
+06/17/2024
+root@asustor:~# dmidecode -s bios-release-revision
+Invalid string keyword: bios-release-revision
+Valid string keywords are:
+  bios-vendor
+  bios-version
+  bios-release-date
+  bios-revision
+  firmware-revision
+  system-manufacturer
+  system-product-name
+  system-version
+  system-serial-number
+  system-uuid
+  system-sku-number
+  system-family
+  baseboard-manufacturer
+  baseboard-product-name
+  baseboard-version
+  baseboard-serial-number
+  baseboard-asset-tag
+  chassis-manufacturer
+  chassis-type
+  chassis-version
+  chassis-serial-number
+  chassis-asset-tag
+  processor-family
+  processor-manufacturer
+  processor-version
+  processor-frequency
+root@asustor:~# gpioinfo
+gpiochip0 - 256 lines:
+        line   0:       unnamed                 input debounce-period=50ms consumer=ACPI:Event
+        line   1:       unnamed                 input
+        line   2:       unnamed                 input consumer=ACPI:Event
+        line   3:       unnamed                 input
+        line   4:       unnamed                 output
+        line   5:       unnamed                 input
+        line   6:       unnamed                 output
+        line   7:       unnamed                 input
+        line   8:       unnamed                 input
+        line   9:       unnamed                 output
+        line  10:       unnamed                 output
+        line  11:       unnamed                 input
+        line  12:       unnamed                 output
+        line  13:       unnamed                 input
+        line  14:       unnamed                 input
+        line  15:       unnamed                 input
+        line  16:       unnamed                 input
+        line  17:       unnamed                 input consumer=ACPI:Event
+        line  18:       unnamed                 input consumer=ACPI:Event
+        line  19:       unnamed                 input
+        line  20:       unnamed                 input
+        line  21:       unnamed                 input
+        line  22:       unnamed                 input
+        line  23:       unnamed                 output
+        line  24:       unnamed                 input consumer=ACPI:Event
+        line  25:       unnamed                 input
+        line  26:       unnamed                 output
+        line  27:       unnamed                 output
+        line  28:       unnamed                 input
+        line  29:       unnamed                 input
+        line  30:       unnamed                 input
+        line  31:       unnamed                 input
+        line  32:       unnamed                 output
+        line  33:       unnamed                 input
+        line  34:       unnamed                 input
+        line  35:       unnamed                 input
+        line  36:       unnamed                 input
+        line  37:       unnamed                 input
+        line  38:       unnamed                 input
+        line  39:       unnamed                 input
+        line  40:       unnamed                 input
+        line  41:       unnamed                 input
+        line  42:       unnamed                 input
+        line  43:       unnamed                 input
+        line  44:       unnamed                 input
+        line  45:       unnamed                 input
+        line  46:       unnamed                 input
+        line  47:       unnamed                 input
+        line  48:       unnamed                 input
+        line  49:       unnamed                 input
+        line  50:       unnamed                 input
+        line  51:       unnamed                 input
+        line  52:       unnamed                 input
+        line  53:       unnamed                 input
+        line  54:       unnamed                 input consumer=ACPI:Event
+        line  55:       unnamed                 input
+        line  56:       unnamed                 input
+        line  57:       unnamed                 input
+        line  58:       unnamed                 input consumer=ACPI:Event
+        line  59:       unnamed                 input consumer=ACPI:Event
+        line  60:       unnamed                 input
+        line  61:       unnamed                 input consumer=ACPI:Event
+        line  62:       unnamed                 input consumer=ACPI:Event
+        line  63:       unnamed                 input
+        line  64:       unnamed                 input
+        line  65:       unnamed                 input
+        line  66:       unnamed                 input
+        line  67:       unnamed                 input
+        line  68:       unnamed                 output
+        line  69:       unnamed                 output
+        line  70:       unnamed                 input
+        line  71:       unnamed                 input
+        line  72:       unnamed                 input
+        line  73:       unnamed                 input
+        line  74:       unnamed                 output
+        line  75:       unnamed                 output
+        line  76:       unnamed                 input
+        line  77:       unnamed                 input
+        line  78:       unnamed                 output
+
+      Note: the front panel appears to have two LAN indicators physically, but only one is exposed as a controllable LED in firmware.
+        line  79:       unnamed                 output
+        line  80:       unnamed                 output
+        line  81:       unnamed                 input
+        line  82:       unnamed                 input
+        line  83:       unnamed                 input
+        line  84:       unnamed                 input
+        line  85:       unnamed                 input
+        line  86:       unnamed                 input
+        line  87:       unnamed                 input
+        line  88:       unnamed                 input
+        line  89:       unnamed                 input
+        line  90:       unnamed                 input
+        line  91:       unnamed                 output
+        line  92:       unnamed                 input
+        line  93:       unnamed                 input
+        line  94:       unnamed                 input
+        line  95:       unnamed                 input
+        line  96:       unnamed                 input
+        line  97:       unnamed                 input
+        line  98:       unnamed                 input
+        line  99:       unnamed                 input
+        line 100:       unnamed                 input
+        line 101:       unnamed                 input
+        line 102:       unnamed                 input
+        line 103:       unnamed                 input
+        line 104:       unnamed                 input
+        line 105:       unnamed                 input
+        line 106:       unnamed                 output
+        line 107:       unnamed                 output
+        line 108:       unnamed                 input
+        line 109:       unnamed                 input
+        line 110:       unnamed                 input
+        line 111:       unnamed                 input
+        line 112:       unnamed                 input
+        line 113:       unnamed                 input
+        line 114:       unnamed                 input
+        line 115:       unnamed                 input
+        line 116:       unnamed                 input
+        line 117:       unnamed                 input
+        line 118:       unnamed                 input
+        line 119:       unnamed                 input
+        line 120:       unnamed                 input
+        line 121:       unnamed                 input
+        line 122:       unnamed                 input
+        line 123:       unnamed                 input
+        line 124:       unnamed                 input
+        line 125:       unnamed                 input
+        line 126:       unnamed                 input
+        line 127:       unnamed                 input
+        line 128:       unnamed                 input
+        line 129:       unnamed                 input
+        line 130:       unnamed                 input
+        line 131:       unnamed                 input
+        line 132:       unnamed                 input
+        line 133:       unnamed                 input
+        line 134:       unnamed                 input
+        line 135:       unnamed                 input
+        line 136:       unnamed                 input
+        line 137:       unnamed                 input
+        line 138:       unnamed                 input
+        line 139:       unnamed                 input
+        line 140:       unnamed                 input
+        line 141:       unnamed                 input
+        line 142:       unnamed                 input
+        line 143:       unnamed                 input
+        line 144:       unnamed                 output
+        line 145:       unnamed                 output
+        line 146:       unnamed                 output
+        line 147:       unnamed                 output
+        line 148:       unnamed                 output
+        line 149:       unnamed                 input
+        line 150:       unnamed                 input
+        line 151:       unnamed                 input
+        line 152:       unnamed                 input
+        line 153:       unnamed                 input
+        line 154:       unnamed                 output
+        line 155:       unnamed                 input
+        line 156:       unnamed                 output
+        line 157:       unnamed                 output
+        line 158:       unnamed                 input
+        line 159:       unnamed                 input
+        line 160:       unnamed                 input
+        line 161:       unnamed                 input
+        line 162:       unnamed                 input
+        line 163:       unnamed                 input
+        line 164:       unnamed                 input
+        line 165:       unnamed                 input
+        line 166:       unnamed                 input
+        line 167:       unnamed                 input
+        line 168:       unnamed                 input
+        line 169:       unnamed                 input
+        line 170:       unnamed                 input
+        line 171:       unnamed                 input
+        line 172:       unnamed                 input
+        line 173:       unnamed                 input
+        line 174:       unnamed                 input
+        line 175:       unnamed                 input
+        line 176:       unnamed                 input
+        line 177:       unnamed                 input
+        line 178:       unnamed                 input
+        line 179:       unnamed                 input
+        line 180:       unnamed                 input
+        line 181:       unnamed                 input
+        line 182:       unnamed                 input
+        line 183:       unnamed                 input
+        line 184:       unnamed                 input
+        line 185:       unnamed                 input
+        line 186:       unnamed                 input
+        line 187:       unnamed                 input
+        line 188:       unnamed                 input
+        line 189:       unnamed                 input
+        line 190:       unnamed                 input
+        line 191:       unnamed                 input
+        line 192:       unnamed                 input
+        line 193:       unnamed                 input
+        line 194:       unnamed                 input
+        line 195:       unnamed                 input
+        line 196:       unnamed                 input
+        line 197:       unnamed                 input
+        line 198:       unnamed                 input
+        line 199:       unnamed                 input
+        line 200:       unnamed                 input
+        line 201:       unnamed                 input
+        line 202:       unnamed                 input
+        line 203:       unnamed                 input
+        line 204:       unnamed                 input
+        line 205:       unnamed                 input
+        line 206:       unnamed                 input
+        line 207:       unnamed                 input
+        line 208:       unnamed                 input
+        line 209:       unnamed                 input
+        line 210:       unnamed                 input
+        line 211:       unnamed                 input
+        line 212:       unnamed                 input
+        line 213:       unnamed                 input
+        line 214:       unnamed                 input
+        line 215:       unnamed                 input
+        line 216:       unnamed                 input
+        line 217:       unnamed                 input
+        line 218:       unnamed                 input
+        line 219:       unnamed                 input
+        line 220:       unnamed                 input
+        line 221:       unnamed                 input
+        line 222:       unnamed                 input
+        line 223:       unnamed                 input
+        line 224:       unnamed                 input
+        line 225:       unnamed                 input
+        line 226:       unnamed                 input
+        line 227:       unnamed                 input
+        line 228:       unnamed                 input
+        line 229:       unnamed                 input
+        line 230:       unnamed                 input
+        line 231:       unnamed                 input
+        line 232:       unnamed                 input
+        line 233:       unnamed                 input
+        line 234:       unnamed                 input
+        line 235:       unnamed                 input
+        line 236:       unnamed                 input
+        line 237:       unnamed                 input
+        line 238:       unnamed                 input
+        line 239:       unnamed                 input
+        line 240:       unnamed                 input
+        line 241:       unnamed                 input
+        line 242:       unnamed                 input
+        line 243:       unnamed                 input
+        line 244:       unnamed                 input
+        line 245:       unnamed                 input
+        line 246:       unnamed                 input
+        line 247:       unnamed                 input
+        line 248:       unnamed                 input
+        line 249:       unnamed                 input
+        line 250:       unnamed                 input
+        line 251:       unnamed                 input
+        line 252:       unnamed                 input
+        line 253:       unnamed                 input
+        line 254:       unnamed                 input
+        line 255:       unnamed                 input
+root@asustor:~# lspci -nn -PP
+00:00.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Root Complex [1022:14b5] (rev 01)
+00:00.2 IOMMU [0806]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h IOMMU [1022:14b6]
+00:01.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Dummy Host Bridge [1022:14b7] (rev 01)
+00:01.1 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14b8]
+00:01.2 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14b8]
+00:02.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Dummy Host Bridge [1022:14b7] (rev 01)
+00:02.1 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14ba]
+00:02.2 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14ba]
+00:02.4 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14ba]
+00:02.5 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe GPP Bridge [1022:14ba]
+00:03.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Dummy Host Bridge [1022:14b7] (rev 01)
+00:03.1 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 19h USB4/Thunderbolt PCIe tunnel [1022:14cd]
+00:04.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Dummy Host Bridge [1022:14b7] (rev 01)
+00:04.1 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 19h USB4/Thunderbolt PCIe tunnel [1022:14cd]
+00:08.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h PCIe Dummy Host Bridge [1022:14b7] (rev 01)
+00:08.1 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h Internal PCIe GPP Bridge [1022:14b9] (rev 10)
+00:08.2 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h Internal PCIe GPP Bridge [1022:14b9] (rev 10)
+00:08.3 PCI bridge [0604]: Advanced Micro Devices, Inc. [AMD] Family 17h-19h Internal PCIe GPP Bridge [1022:14b9] (rev 10)
+00:14.0 SMBus [0c05]: Advanced Micro Devices, Inc. [AMD] FCH SMBus Controller [1022:790b] (rev 71)
+00:14.3 ISA bridge [0601]: Advanced Micro Devices, Inc. [AMD] FCH LPC Bridge [1022:790e] (rev 51)
+00:18.0 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 0 [1022:1679]
+00:18.1 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 1 [1022:167a]
+00:18.2 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 2 [1022:167b]
+00:18.3 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 3 [1022:167c]
+00:18.4 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 4 [1022:167d]
+00:18.5 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 5 [1022:167e]
+00:18.6 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 6 [1022:167f]
+00:18.7 Host bridge [0600]: Advanced Micro Devices, Inc. [AMD] Rembrandt Data Fabric: Device 18h; Function 7 [1022:1680]
+00:01.1/01:00.0 Ethernet controller [0200]: Realtek Semiconductor Co., Ltd. RTL8126 5GbE Controller [10ec:8126] (rev 01)
+00:01.2/02:00.0 Ethernet controller [0200]: Realtek Semiconductor Co., Ltd. RTL8126 5GbE Controller [10ec:8126] (rev 01)
+00:02.1/03:00.0 Non-Volatile memory controller [0108]: Phison Electronics Corporation PS5027-E27T PCIe4 NVMe Controller (DRAM-less) [1987:5027] (rev 01)
+00:02.2/04:00.0 Non-Volatile memory controller [0108]: KIOXIA Corporation NVMe SSD Controller BG6 (DRAM-less) [1e0f:001a] (rev 01)
+00:02.4/05:00.0 Non-Volatile memory controller [0108]: Phison Electronics Corporation PS5027-E27T PCIe4 NVMe Controller (DRAM-less) [1987:5027] (rev 01)
+00:02.5/06:00.0 SATA controller [0106]: ASMedia Technology Inc. ASM1166 Serial ATA Controller [1b21:1166] (rev 02)
+00:08.1/e7:00.0 Non-Essential Instrumentation [1300]: Advanced Micro Devices, Inc. [AMD/ATI] Dummy Function (absent graphics controller) [1002:145a]
+00:08.1/e7:00.2 Encryption controller [1080]: Advanced Micro Devices, Inc. [AMD] Family 19h PSP/CCP [1022:1649]
+00:08.1/e7:00.3 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4 XHCI controller #3 [1022:161d]
+00:08.1/e7:00.4 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4 XHCI controller #4 [1022:161e]
+00:08.1/e7:00.5 Multimedia controller [0480]: Advanced Micro Devices, Inc. [AMD] Audio Coprocessor [1022:15e2] (rev 60)
+00:08.1/e7:00.6 Audio device [0403]: Advanced Micro Devices, Inc. [AMD] Family 17h/19h/1ah HD Audio Controller [1022:15e3]
+00:08.1/e7:00.7 Signal processing controller [1180]: Advanced Micro Devices, Inc. [AMD] Sensor Fusion Hub [1022:15e4]
+00:08.2/e8:00.0 Non-Essential Instrumentation [1300]: Advanced Micro Devices, Inc. [AMD] Zeppelin/Raven/Raven2 PCIe Dummy Function [1022:145a] (rev a1)
+00:08.2/e8:00.2 Ethernet controller [0200]: Advanced Micro Devices, Inc. [AMD] XGMAC 10GbE Controller [1022:1458]
+00:08.2/e8:00.3 Ethernet controller [0200]: Advanced Micro Devices, Inc. [AMD] XGMAC 10GbE Controller [1022:1458]
+00:08.3/e9:00.0 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4 XHCI controller #8 [1022:161f]
+00:08.3/e9:00.3 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4 XHCI controller #5 [1022:15d6]
+00:08.3/e9:00.4 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4 XHCI controller #6 [1022:15d7]
+00:08.3/e9:00.5 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4/Thunderbolt NHI controller #1 [1022:162e]
+00:08.3/e9:00.6 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Rembrandt USB4/Thunderbolt NHI controller #2 [1022:162f]

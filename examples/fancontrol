@@ -1,0 +1,31 @@
+# fancontrol(8) configuration for ASUSTOR Lockerstor Gen3 (AS68xxT).
+#
+# The asustor_as68xx driver exposes one PWM channel and one tach reading
+# under the "asustor_mcu" hwmon device:
+#     /sys/class/hwmon/hwmonN/pwm1         (0..255, write to set fan duty)
+#     /sys/class/hwmon/hwmonN/fan1_input   (RPM, read-only)
+#
+# CPU temperature is read from the in-kernel "k10temp" driver
+# (Tctl on /sys/class/hwmon/hwmonM/temp1_input).
+#
+# The `hwmon1` / `hwmon2` tokens below are just labels used inside this
+# config — they do NOT have to match the actual /sys/class/hwmon/hwmonN
+# numbers on your system (those are not stable across boots and may be
+# anything, e.g. hwmon10). fancontrol resolves the real hwmon node at
+# runtime by matching DEVPATH= and DEVNAME= against /sys/class/hwmon/*.
+# Run `pwmconfig` once if you want to regenerate this file from scratch
+# on your hardware.
+#
+# Note: this driver only supports manual PWM mode (pwm1_enable=1). It is
+# always on once loaded; there is no firmware fan curve to fall back to.
+INTERVAL=10
+DEVPATH=hwmon1=devices/platform/asustor_mcu hwmon2=devices/pci0000:00/0000:00:18.3
+DEVNAME=hwmon1=asustor_mcu hwmon2=k10temp
+FCTEMPS=hwmon1/pwm1=hwmon2/temp1_input
+FCFANS=hwmon1/pwm1=hwmon1/fan1_input
+MINTEMP=hwmon1/pwm1=40
+MAXTEMP=hwmon1/pwm1=80
+MINSTART=hwmon1/pwm1=90
+MINSTOP=hwmon1/pwm1=60
+MINPWM=60
+MAXPWM=255
