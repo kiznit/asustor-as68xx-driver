@@ -153,8 +153,11 @@ current_activating_unit() {
 }
 
 current_deactivating_unit() {
+	# Skip our own service: at t=0 of the stop we are the only
+	# deactivating unit, which would just show "asustor-status" on
+	# the LCD instead of something meaningful.
 	systemctl list-units --type=service --state=deactivating --no-legend --plain 2>/dev/null \
-		| awk 'NR==1 { sub(/\.service$/, "", $1); print $1; exit }'
+		| awk '{ sub(/\.service$/, "", $1); if ($1 != "asustor-status") { print $1; exit } }'
 }
 
 # Worst pool state across all imported pools.
