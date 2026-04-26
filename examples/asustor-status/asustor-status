@@ -300,6 +300,19 @@ phase_ready() {
 # --- Shutdown handler (SIGTERM from systemd ExecStop) ---
 on_shutdown() {
 	status_shutdown
+	# Detect whether the system is rebooting or powering off so the
+	# final LCD frame (which the MCU persists across the actual
+	# halt) makes sense at the next power-on. On a reboot the user
+	# sees this frame for the entire BIOS POST + initramfs window
+	# until our driver re-loads, so "goodbye" is misleading.
+	local final0='Shutting down' final1='goodbye'
+	if systemctl list-jobs --no-legend 2>/dev/null | grep -qE '\<reboot\.target\>'; then
+		final0='Rebooting...'
+		final1=''
+	elif systemctl list-jobs --no-legend 2>/dev/null | grep -qE '\<(poweroff|halt)\.target\>'; then
+		final0='Powering off'
+		final1='goodbye'
+	fi
 	# systemctl can be slow / hang during real shutdown, so we limit
 	# how often we ask it. The unit's TimeoutStopSec gives us ~25s
 	# total to render LCD frames before SIGKILL; the loop below stays
@@ -318,8 +331,8 @@ on_shutdown() {
 	done
 	# Final persisted state seen on next power-up before the driver loads:
 	status_shutdown
-	lcd0 'Shutting down'
-	lcd1 'goodbye'
+	lcd0 "$final0"
+	lcd1 "$final1"
 	exit 0
 }
 
