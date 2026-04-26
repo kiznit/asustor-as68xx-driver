@@ -44,6 +44,11 @@
 #   ASUSTOR_FAN_BAD_THRESHOLD (samples; one sample per ~3 s)
 #                         default: 10  (=> 30 s of tach==0 before
 #                                       declaring fan failure)
+#   ASUSTOR_HDD_TEMP_REFRESH (seconds between drivetemp reads)
+#                         default: 60. Lower values give more current
+#                         temperatures on screen B but cause the bay
+#                         disk-activity LEDs to flash on each refresh,
+#                         since drivetemp issues a real SATA command.
 #   ASUSTOR_POOL_LABEL    label shown on screen B (default: "tank")
 #
 # HDD temperatures are read from the kernel `drivetemp` hwmon driver
@@ -154,7 +159,23 @@ pool_state() {
 			END { print worst }'
 }
 
+# `drivetemp` reads issue an actual SATA SCT command, which counts
+# as block I/O and flashes the bay's `disk-activity` LED. To avoid
+# flashing all six bays on every 3 s screen rotation, we cache the
+# HDD temperature and refresh it at most once per HDD_TEMP_REFRESH
+# seconds. CPU and fan readings are passive (sysfs-only) and stay
+# live each tick.
+HDD_TEMP_REFRESH=${ASUSTOR_HDD_TEMP_REFRESH:-60}
+HDD_TEMP_CACHE=0
+HDD_TEMP_NEXT=0
+
 max_hdd_temp() {
+	local now
+	now=$(date +%s)
+	if [ "$now" -lt "$HDD_TEMP_NEXT" ]; then
+		echo "$HDD_TEMP_CACHE"
+		return
+	fi
 	local maxt=0 t d
 	for d in "${HDD_HWMONS[@]}"; do
 		[ -n "$d" ] || continue
@@ -165,6 +186,8 @@ max_hdd_temp() {
 		t=$((t / 1000))
 		[ "$t" -gt "$maxt" ] && maxt=$t
 	done
+	HDD_TEMP_CACHE=$maxt
+	HDD_TEMP_NEXT=$((now + HDD_TEMP_REFRESH))
 	echo "$maxt"
 }
 
