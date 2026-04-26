@@ -46,6 +46,18 @@ case "$target" in
 		echo "$0: '$target' is not a block device or known bay" >&2
 		exit 1
 	fi
+	# Strip a trailing partition number from /dev/sdXN so callers can
+	# pass partition paths. ZFS uses whole-disk members but auto-creates
+	# `-part1`, so `zpool status -PL` reports `/dev/sda1` rather than
+	# `/dev/sda` — without this step the helper fails to map any ZFS
+	# vdev to a bay (silently, since the ZED zedlet and sync script
+	# both swallow helper errors).
+	case "$dev" in
+	/dev/sd[a-z]*[0-9])
+		whole=$(echo "$dev" | sed -E 's/[0-9]+$//')
+		[ -b "$whole" ] && dev=$whole
+		;;
+	esac
 	bay=
 	for link in /dev/disk/by-path/*-ata-[0-9]*; do
 		[ -e "$link" ] || continue
