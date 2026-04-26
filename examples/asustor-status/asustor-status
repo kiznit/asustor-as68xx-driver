@@ -120,11 +120,15 @@ write() { echo "$2" > "$1" 2>/dev/null || true; }
 led_solid() { write "$1/trigger" none; write "$1/brightness" 1; }
 led_off()   { write "$1/trigger" none; write "$1/brightness" 0; }
 led_blink() {
+	# IMPORTANT: on the asustor LED driver, writing `brightness` AFTER
+	# the `timer` trigger has been set forces the LED solid and stops
+	# the timer. Set brightness first while trigger=none, then switch
+	# to timer; do not touch brightness afterwards.
+	write "$1/trigger" none
+	write "$1/brightness" 1
 	write "$1/trigger" timer
-	# delay_on/delay_off appear after the trigger switch.
 	write "$1/delay_on" 500
 	write "$1/delay_off" 500
-	write "$1/brightness" 1
 }
 led_panic() { write "$1/trigger" panic; }
 
