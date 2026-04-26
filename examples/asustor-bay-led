@@ -61,14 +61,17 @@ case "$target" in
 	bay=
 	for link in /dev/disk/by-path/*-ata-[0-9]*; do
 		[ -e "$link" ] || continue
-		# Skip partition links (ata-N-partM) and dotted forms (ata-N.0).
+		# Skip partition links (ata-N-partM). Both bare (`-ata-N`) and
+		# dotted (`-ata-N.0`, full SCSI LUN form on PVE / Trixie) point
+		# at the same disk; accept either and strip a trailing `.N` so
+		# the resulting bay number is always a plain integer.
 		case "$link" in
 		*-part[0-9]*) continue ;;
-		*.[0-9]*) continue ;;
 		esac
 		linktarget=$(readlink -f -- "$link" 2>/dev/null || true)
 		if [ "$linktarget" = "$dev" ]; then
 			bay=${link##*-ata-}
+			bay=${bay%%.*}
 			break
 		fi
 	done
