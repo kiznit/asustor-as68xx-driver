@@ -31,23 +31,23 @@ SUBSYSTEM!="block",         GOTO="asustor_disk_leds_end"
 ENV{DEVTYPE}!="disk",       GOTO="asustor_disk_leds_end"
 KERNEL!="sd*[!0-9]",        GOTO="asustor_disk_leds_end"
 
-ENV{ID_PATH}=="*-ata-1",    ENV{ASUSTOR_BAY}="1"
-ENV{ID_PATH}=="*-ata-2",    ENV{ASUSTOR_BAY}="2"
-ENV{ID_PATH}=="*-ata-3",    ENV{ASUSTOR_BAY}="3"
-ENV{ID_PATH}=="*-ata-4",    ENV{ASUSTOR_BAY}="4"
-ENV{ID_PATH}=="*-ata-5",    ENV{ASUSTOR_BAY}="5"
-ENV{ID_PATH}=="*-ata-6",    ENV{ASUSTOR_BAY}="6"
+ENV{ID_PATH}=="*-ata-1|*-ata-1.*",    ENV{ASUSTOR_BAY}="1"
+ENV{ID_PATH}=="*-ata-2|*-ata-2.*",    ENV{ASUSTOR_BAY}="2"
+ENV{ID_PATH}=="*-ata-3|*-ata-3.*",    ENV{ASUSTOR_BAY}="3"
+ENV{ID_PATH}=="*-ata-4|*-ata-4.*",    ENV{ASUSTOR_BAY}="4"
+ENV{ID_PATH}=="*-ata-5|*-ata-5.*",    ENV{ASUSTOR_BAY}="5"
+ENV{ID_PATH}=="*-ata-6|*-ata-6.*",    ENV{ASUSTOR_BAY}="6"
 # Bays 7-10 (AS6808T / AS6810T): uncomment once the disk-LED GPIO pins
 # for those bays have been mapped in asustor_gpio.c.
-#ENV{ID_PATH}=="*-ata-7",   ENV{ASUSTOR_BAY}="7"
-#ENV{ID_PATH}=="*-ata-8",   ENV{ASUSTOR_BAY}="8"
-#ENV{ID_PATH}=="*-ata-9",   ENV{ASUSTOR_BAY}="9"
-#ENV{ID_PATH}=="*-ata-10",  ENV{ASUSTOR_BAY}="10"
+#ENV{ID_PATH}=="*-ata-7|*-ata-7.*",   ENV{ASUSTOR_BAY}="7"
+#ENV{ID_PATH}=="*-ata-8|*-ata-8.*",   ENV{ASUSTOR_BAY}="8"
+#ENV{ID_PATH}=="*-ata-9|*-ata-9.*",   ENV{ASUSTOR_BAY}="9"
+#ENV{ID_PATH}=="*-ata-10|*-ata-10.*", ENV{ASUSTOR_BAY}="10"
 
 ENV{ASUSTOR_BAY}=="?*", \
     RUN+="/bin/sh -c 'led=/sys/class/leds/sata$env{ASUSTOR_BAY}:green:disk; \
-                      [ -d $led ] || exit 0; \
-                      echo blkdev > $led/trigger 2>/dev/null || exit 0; \
-                      echo %k > $led/link_device 2>/dev/null || true'"
+                      [ -d $$led ] || exit 0; \
+                      echo blkdev > $$led/trigger 2>/dev/null || exit 0; \
+                      echo %k > $$led/link_device 2>/dev/null || true'"
 
 LABEL="asustor_disk_leds_end"
