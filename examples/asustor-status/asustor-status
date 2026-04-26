@@ -1,0 +1,342 @@
+#!/bin/bash
+# asustor-status — front-panel status LED + LCD daemon for AS68xxT.
+#
+# Single Bash daemon that drives:
+#
+#   - asustor:green:status / asustor:red:status (composite status LED)
+#   - lcd_line0 / lcd_line1 on the asustor_lcm platform device
+#
+# across five phases:
+#
+#   booting   green blink, LCD shows the systemd unit currently
+#             running (or a "Booting..." spinner). Held until
+#             `systemctl is-system-running` returns running/degraded.
+#
+#   ready     green solid, LCD rotates 3 screens (3 s each):
+#             pool health -> HDD/CPU temps -> fan RPM/PWM.
+#
+#   warn      yellow (green + red solid), LCD shows the warning.
+#             Triggered by any of: pool DEGRADED, HDD/CPU temp at the
+#             "warn" threshold.
+#
+#   error     red blink, LCD shows the error. Triggered by any of:
+#             pool FAULTED/UNAVAIL/REMOVED, HDD/CPU temp at the
+#             "crit" threshold, fan tach == 0 with PWM > 0 sustained.
+#
+#   shutdown  green blink + LCD "Shutting down" + currently-stopping
+#             unit. Entered via SIGTERM from the systemd unit's
+#             ExecStop. The MCU persists LED state across power-off,
+#             so leaving green-blink means the next power-on already
+#             shows the correct "booting" state from t=0, before the
+#             driver loads — no misleading red flash.
+#
+# The kernel's `panic` trigger on asustor:red:status is preserved
+# whenever we don't actively need red, so a real kernel panic still
+# lights the LED solid red even if this daemon has died.
+#
+# Configurable via environment variables (see /etc/default/asustor-status
+# in the provided systemd unit):
+#
+#   ASUSTOR_TEMP_HDD_WARN, ASUSTOR_TEMP_HDD_CRIT (Celsius)
+#                         default: 60 / 65
+#   ASUSTOR_TEMP_CPU_WARN, ASUSTOR_TEMP_CPU_CRIT (Celsius)
+#                         default: 80 / 90
+#   ASUSTOR_FAN_BAD_THRESHOLD (samples; one sample per ~3 s)
+#                         default: 10  (=> 30 s of tach==0 before
+#                                       declaring fan failure)
+#   ASUSTOR_HDD_TEMP_REFRESH (seconds between drivetemp reads)
+#                         default: 60. Lower values give more current
+#                         temperatures on screen B but cause the bay
+#                         disk-activity LEDs to flash on each refresh,
+#                         since drivetemp issues a real SATA command.
+#   ASUSTOR_POOL_LABEL    label shown on screen B (default: "tank")
+#
+# HDD temperatures are read from the kernel `drivetemp` hwmon driver
+# (CONFIG_SENSORS_DRIVETEMP). It returns -EAGAIN for drives in standby
+# without waking them, so HDD spindown is preserved. Load the module
+# at boot via /etc/modules-load.d/drivetemp.conf (see README).
+
+set -u
+
+LCD=/sys/devices/platform/asustor_lcm
+LEDS=/sys/class/leds
+GREEN=$LEDS/asustor:green:status
+RED=$LEDS/asustor:red:status
+
+# --- Config (env-overridable) ---
+TEMP_HDD_WARN=${ASUSTOR_TEMP_HDD_WARN:-60}
+TEMP_HDD_CRIT=${ASUSTOR_TEMP_HDD_CRIT:-65}
+TEMP_CPU_WARN=${ASUSTOR_TEMP_CPU_WARN:-80}
+TEMP_CPU_CRIT=${ASUSTOR_TEMP_CPU_CRIT:-90}
+FAN_BAD_THRESHOLD=${ASUSTOR_FAN_BAD_THRESHOLD:-10}
+POOL_LABEL=${ASUSTOR_POOL_LABEL:-tank}
+
+# --- Hardware sensor discovery (by name; hwmonN is not stable) ---
+find_hwmon() {
+	local name=$1 f
+	for f in /sys/class/hwmon/hwmon*/name; do
+		[ -r "$f" ] || continue
+		[ "$(cat "$f")" = "$name" ] && { dirname "$f"; return; }
+	done
+}
+
+# Discover ALL drivetemp instances (one per ATA disk) once at startup.
+# `drivetemp` returns -EAGAIN on standby drives without waking them, so
+# `cat temp1_input` simply fails on a sleeping drive and we skip it.
+find_drivetemp_dirs() {
+	local f
+	for f in /sys/class/hwmon/hwmon*/name; do
+		[ -r "$f" ] || continue
+		[ "$(cat "$f")" = "drivetemp" ] && dirname "$f"
+	done
+}
+
+MCU=$(find_hwmon asustor_mcu)
+CPU=$(find_hwmon k10temp)
+read -r -a HDD_HWMONS <<< "$(find_drivetemp_dirs | tr '\n' ' ')"
+
+# --- LCD helpers (cached to avoid redundant 9600-baud serial writes) ---
+LCD0_CUR=
+LCD1_CUR=
+pad() { printf '%-16.16s' "$1"; }
+lcd0() {
+	local s
+	s=$(pad "$1")
+	[ "$s" = "$LCD0_CUR" ] && return
+	printf '%s' "$s" > "$LCD/lcd_line0" 2>/dev/null || true
+	LCD0_CUR=$s
+}
+lcd1() {
+	local s
+	s=$(pad "$1")
+	[ "$s" = "$LCD1_CUR" ] && return
+	printf '%s' "$s" > "$LCD/lcd_line1" 2>/dev/null || true
+	LCD1_CUR=$s
+}
+
+# --- LED state primitives ---
+write() { echo "$2" > "$1" 2>/dev/null || true; }
+
+led_solid() { write "$1/trigger" none; write "$1/brightness" 1; }
+led_off()   { write "$1/trigger" none; write "$1/brightness" 0; }
+led_blink() {
+	# IMPORTANT: on the asustor LED driver, writing `brightness` AFTER
+	# the `timer` trigger has been set forces the LED solid and stops
+	# the timer. Set brightness first while trigger=none, then switch
+	# to timer; do not touch brightness afterwards.
+	write "$1/trigger" none
+	write "$1/brightness" 1
+	write "$1/trigger" timer
+	write "$1/delay_on" 500
+	write "$1/delay_off" 500
+}
+led_panic() { write "$1/trigger" panic; }
+
+# Composite status states.
+status_booting()  { led_blink "$GREEN"; led_panic "$RED"; }
+status_ready()    { led_solid "$GREEN"; led_panic "$RED"; }
+status_warn()     { led_solid "$GREEN"; led_solid "$RED"; }   # yellow
+status_error()    { led_off   "$GREEN"; led_blink "$RED"; }
+status_shutdown() { led_blink "$GREEN"; led_panic "$RED"; }
+
+# --- Probes ---
+boot_done() {
+	case "$(systemctl is-system-running 2>/dev/null)" in
+		running|degraded) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+current_activating_unit() {
+	systemctl list-units --type=service --state=activating --no-legend --plain 2>/dev/null \
+		| awk 'NR==1 { sub(/\.service$/, "", $1); print $1; exit }'
+}
+
+current_deactivating_unit() {
+	# Skip our own service: at t=0 of the stop we are the only
+	# deactivating unit, which would just show "asustor-status" on
+	# the LCD instead of something meaningful.
+	systemctl list-units --type=service --state=deactivating --no-legend --plain 2>/dev/null \
+		| awk '{ sub(/\.service$/, "", $1); if ($1 != "asustor-status") { print $1; exit } }'
+}
+
+# Worst pool state across all imported pools.
+pool_state() {
+	zpool list -H -o health 2>/dev/null \
+		| awk '
+			BEGIN { worst="ONLINE"; rank["ONLINE"]=0; rank["DEGRADED"]=1;
+			        rank["OFFLINE"]=2; rank["REMOVED"]=3; rank["UNAVAIL"]=4;
+			        rank["FAULTED"]=5 }
+			{ if ((($1) in rank) && rank[$1] > rank[worst]) worst=$1 }
+			END { print worst }'
+}
+
+# `drivetemp` reads issue an actual SATA SCT command, which counts
+# as block I/O and flashes the bay's `disk-activity` LED. To avoid
+# flashing all six bays on every 3 s screen rotation, we cache the
+# HDD temperature and refresh it at most once per HDD_TEMP_REFRESH
+# seconds. CPU and fan readings are passive (sysfs-only) and stay
+# live each tick.
+HDD_TEMP_REFRESH=${ASUSTOR_HDD_TEMP_REFRESH:-60}
+HDD_TEMP_CACHE=0
+HDD_TEMP_NEXT=0
+
+max_hdd_temp() {
+	local now
+	now=$(date +%s)
+	if [ "$now" -lt "$HDD_TEMP_NEXT" ]; then
+		echo "$HDD_TEMP_CACHE"
+		return
+	fi
+	local maxt=0 t d
+	for d in "${HDD_HWMONS[@]}"; do
+		[ -n "$d" ] || continue
+		# `drivetemp` returns errno (EAGAIN) on standby drives; cat
+		# fails silently and we skip. Reported value is millidegrees.
+		t=$(cat "$d/temp1_input" 2>/dev/null) || continue
+		[ -n "$t" ] || continue
+		t=$((t / 1000))
+		[ "$t" -gt "$maxt" ] && maxt=$t
+	done
+	HDD_TEMP_CACHE=$maxt
+	HDD_TEMP_NEXT=$((now + HDD_TEMP_REFRESH))
+	echo "$maxt"
+}
+
+cpu_temp() {
+	[ -n "${CPU:-}" ] || { echo 0; return; }
+	local v
+	v=$(cat "$CPU/temp1_input" 2>/dev/null)
+	[ -n "$v" ] && echo $((v / 1000)) || echo 0
+}
+
+fan_rpm() { [ -n "${MCU:-}" ] && cat "$MCU/fan1_input" 2>/dev/null || echo 0; }
+fan_pwm() { [ -n "${MCU:-}" ] && cat "$MCU/pwm1"        2>/dev/null || echo 0; }
+
+# --- Phases ---
+
+phase_boot() {
+	status_booting
+	local spin=0 unit dots
+	while ! boot_done; do
+		unit=$(current_activating_unit)
+		if [ -n "$unit" ]; then
+			lcd0 'Booting...'
+			lcd1 "$unit"
+		else
+			case $((spin % 4)) in
+				0) dots='   ' ;;
+				1) dots='.  ' ;;
+				2) dots='.. ' ;;
+				3) dots='...' ;;
+			esac
+			lcd0 "Booting$dots"
+			lcd1 ''
+		fi
+		spin=$((spin + 1))
+		sleep 1
+	done
+}
+
+FAN_BAD_COUNT=0
+
+phase_ready() {
+	local screen=0 pool hddt cput rpm pwm warn crit
+	while true; do
+		pool=$(pool_state)
+		hddt=$(max_hdd_temp)
+		cput=$(cpu_temp)
+		rpm=$(fan_rpm)
+		pwm=$(fan_pwm)
+
+		# Latch fan-failure state across samples.
+		if [ "$pwm" -gt 0 ] && [ "$rpm" -eq 0 ]; then
+			FAN_BAD_COUNT=$((FAN_BAD_COUNT + 1))
+		else
+			FAN_BAD_COUNT=0
+		fi
+
+		warn=
+		crit=
+
+		case "$pool" in
+			DEGRADED)                         warn="ZFS DEGRADED|$pool" ;;
+			FAULTED|UNAVAIL|REMOVED|OFFLINE)  crit="ZFS FAULTED|$pool" ;;
+		esac
+		[ "$hddt" -ge "$TEMP_HDD_CRIT" ] && crit="HDD TEMP CRIT|${hddt}C"
+		[ "$cput" -ge "$TEMP_CPU_CRIT" ] && crit="CPU TEMP CRIT|${cput}C"
+		[ "$FAN_BAD_COUNT" -ge "$FAN_BAD_THRESHOLD" ] && crit="FAN FAILURE|pwm=$pwm rpm=0"
+		if [ -z "$crit" ]; then
+			[ "$hddt" -ge "$TEMP_HDD_WARN" ] && warn="HDD TEMP WARN|${hddt}C"
+			[ "$cput" -ge "$TEMP_CPU_WARN" ] && warn="CPU TEMP WARN|${cput}C"
+		fi
+
+		if [ -n "$crit" ]; then
+			status_error
+			lcd0 "${crit%%|*}"
+			lcd1 "${crit##*|}"
+		elif [ -n "$warn" ]; then
+			status_warn
+			lcd0 "${warn%%|*}"
+			lcd1 "${warn##*|}"
+		else
+			status_ready
+			case $((screen % 3)) in
+				0) lcd0 "Pool: ${POOL_LABEL}"; lcd1 "$pool"           ;;
+				1) lcd0 "CPU: ${cput}C";       lcd1 "HDD: ${hddt}C"   ;;
+				2) lcd0 "PWM: $((pwm * 100 / 255))% (${pwm})"; lcd1 "Fan: ${rpm} RPM" ;;
+			esac
+			screen=$((screen + 1))
+		fi
+
+		# Sleep in 1s slices so SIGTERM (shutdown) is acted on
+		# within ~1s instead of waiting for a 3s sleep to return.
+		sleep 1
+		sleep 1
+		sleep 1
+	done
+}
+
+# --- Shutdown handler (SIGTERM from systemd ExecStop) ---
+on_shutdown() {
+	status_shutdown
+	# Detect whether the system is rebooting or powering off so the
+	# final LCD frame (which the MCU persists across the actual
+	# halt) makes sense at the next power-on. On a reboot the user
+	# sees this frame for the entire BIOS POST + initramfs window
+	# until our driver re-loads, so "goodbye" is misleading.
+	local final0='Shutting down' final1='goodbye'
+	if systemctl list-jobs --no-legend 2>/dev/null | grep -qE '\<reboot\.target\>'; then
+		final0='Rebooting...'
+		final1=''
+	elif systemctl list-jobs --no-legend 2>/dev/null | grep -qE '\<(poweroff|halt)\.target\>'; then
+		final0='Powering off'
+		final1='goodbye'
+	fi
+	# systemctl can be slow / hang during real shutdown, so we limit
+	# how often we ask it. The unit's TimeoutStopSec gives us ~25s
+	# total to render LCD frames before SIGKILL; the loop below stays
+	# safely inside that.
+	local i unit=
+	for i in $(seq 1 15); do
+		# Refresh deactivating unit every other second to keep the LCD
+		# loop snappy and avoid blocking on a slow systemctl during
+		# late shutdown.
+		if [ $((i % 2)) -eq 1 ]; then
+			unit=$(current_deactivating_unit)
+		fi
+		lcd0 'Shutting down'
+		lcd1 "${unit:-please wait}"
+		sleep 1
+	done
+	# Final persisted state seen on next power-up before the driver loads:
+	status_shutdown
+	lcd0 "$final0"
+	lcd1 "$final1"
+	exit 0
+}
+
+trap on_shutdown TERM INT
+
+phase_boot
+phase_ready
