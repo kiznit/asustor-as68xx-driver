@@ -143,9 +143,14 @@ boot_done() {
 	esac
 }
 
-current_unit() {
-	systemctl list-jobs --no-legend 2>/dev/null \
-		| awk '$3 == "running" { sub(/\.[a-z]+$/, "", $2); print $2; exit }'
+current_activating_unit() {
+	systemctl list-units --type=service --state=activating --no-legend --plain 2>/dev/null \
+		| awk 'NR==1 { sub(/\.service$/, "", $1); print $1; exit }'
+}
+
+current_deactivating_unit() {
+	systemctl list-units --type=service --state=deactivating --no-legend --plain 2>/dev/null \
+		| awk 'NR==1 { sub(/\.service$/, "", $1); print $1; exit }'
 }
 
 # Worst pool state across all imported pools.
@@ -207,7 +212,7 @@ phase_boot() {
 	status_booting
 	local spin=0 unit dots
 	while ! boot_done; do
-		unit=$(current_unit)
+		unit=$(current_activating_unit)
 		if [ -n "$unit" ]; then
 			lcd0 'Booting...'
 			lcd1 "$unit"
@@ -277,16 +282,29 @@ phase_ready() {
 			screen=$((screen + 1))
 		fi
 
-		sleep 3
+		# Sleep in 1s slices so SIGTERM (shutdown) is acted on
+		# within ~1s instead of waiting for a 3s sleep to return.
+		sleep 1
+		sleep 1
+		sleep 1
 	done
 }
 
 # --- Shutdown handler (SIGTERM from systemd ExecStop) ---
 on_shutdown() {
 	status_shutdown
-	local unit
-	for _ in $(seq 1 20); do
-		unit=$(current_unit)
+	# systemctl can be slow / hang during real shutdown, so we limit
+	# how often we ask it. The unit's TimeoutStopSec gives us ~25s
+	# total to render LCD frames before SIGKILL; the loop below stays
+	# safely inside that.
+	local i unit=
+	for i in $(seq 1 15); do
+		# Refresh deactivating unit every other second to keep the LCD
+		# loop snappy and avoid blocking on a slow systemctl during
+		# late shutdown.
+		if [ $((i % 2)) -eq 1 ]; then
+			unit=$(current_deactivating_unit)
+		fi
 		lcd0 'Shutting down'
 		lcd1 "${unit:-please wait}"
 		sleep 1
