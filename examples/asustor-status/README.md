@@ -26,9 +26,10 @@ misleading red flash from a stale shutdown state.
 
 - **ZFS pool health** — worst state across all imported pools.
   `DEGRADED` -> warn; `FAULTED`/`UNAVAIL`/`REMOVED`/`OFFLINE` -> error.
-- **HDD temperature** — max across configured drives, via
-  `smartctl -A -n standby` (skips spun-down drives, won't keep them
-  awake). Default thresholds: 60 / 65 deg C.
+- **HDD temperature** — max across all SATA disks reported by the
+  kernel `drivetemp` hwmon driver. Standby drives return -EAGAIN
+  and are skipped without being woken, so HDD spindown is
+  preserved. Default thresholds: 60 / 65 deg C.
 - **CPU temperature** — `k10temp` `temp1_input`. Default: 80 / 90.
 - **Fan failure** — tach reads 0 RPM while PWM > 0 for ~30 s
   (10 samples).
@@ -45,7 +46,6 @@ All settings have sensible defaults; override via the systemd
 
 | Variable                    | Default                  | Meaning                                        |
 |-----------------------------|--------------------------|------------------------------------------------|
-| `ASUSTOR_HDDS`              | `sda sdb sdc sdd sde sdf`| short device names of bay-attached HDDs        |
 | `ASUSTOR_TEMP_HDD_WARN/CRIT`| `60 / 65`                | HDD temperature thresholds, deg C              |
 | `ASUSTOR_TEMP_CPU_WARN/CRIT`| `80 / 90`                | CPU temperature thresholds, deg C              |
 | `ASUSTOR_FAN_BAD_THRESHOLD` | `10`                     | samples of tach==0 + PWM>0 before "fan failure" |
@@ -53,12 +53,21 @@ All settings have sensible defaults; override via the systemd
 
 ## Install
 
+The daemon reads HDD temperatures from the kernel `drivetemp` hwmon
+driver. Make sure it loads at boot:
+
+```sh
+echo drivetemp | sudo tee /etc/modules-load.d/drivetemp.conf
+sudo modprobe drivetemp
+```
+
+Then install the daemon and unit:
+
 ```sh
 sudo install -m 0755 asustor-status            /usr/local/sbin/
 sudo install -m 0644 asustor-status.service    /etc/systemd/system/
 # Optional: override defaults
 # sudo install -m 0644 /dev/stdin /etc/default/asustor-status <<'EOF'
-# ASUSTOR_HDDS="sda sdb sdc sdd"
 # ASUSTOR_TEMP_HDD_WARN=58
 # EOF
 sudo systemctl daemon-reload
@@ -85,13 +94,17 @@ and `systemctl restart asustor-status`.
 ## Dependencies
 
 - `systemctl`, `awk`, `bash`, `sed` (always present on systemd hosts)
-- `smartmontools` for HDD temperature (`smartctl`)
+- Kernel `drivetemp` hwmon driver (`CONFIG_SENSORS_DRIVETEMP`) for
+  HDD temperature — enabled by default in mainline / Debian / PVE
+  kernels; just needs `modprobe drivetemp`.
 - `zfsutils-linux` for pool status (`zpool list`)
 - The driver's `asustor_mcu` hwmon device for fan RPM/PWM (auto-detected)
 - The driver's `k10temp` style CPU sensor (auto-detected; AMD-only)
 
 If `zpool` isn't installed, the pool-state probe returns `ONLINE`
 and the daemon skips the pool screen on rotation gracefully.
+If `drivetemp` is unavailable, HDD-temperature monitoring is
+disabled (max temp reads as 0) but everything else still works.
 
 ## Limitations
 

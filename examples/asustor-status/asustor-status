@@ -37,8 +37,6 @@
 # Configurable via environment variables (see /etc/default/asustor-status
 # in the provided systemd unit):
 #
-#   ASUSTOR_HDDS          space-separated short names ("sda sdb sdc")
-#                         default: sda..sdf
 #   ASUSTOR_TEMP_HDD_WARN, ASUSTOR_TEMP_HDD_CRIT (Celsius)
 #                         default: 60 / 65
 #   ASUSTOR_TEMP_CPU_WARN, ASUSTOR_TEMP_CPU_CRIT (Celsius)
@@ -47,9 +45,11 @@
 #                         default: 10  (=> 30 s of tach==0 before
 #                                       declaring fan failure)
 #   ASUSTOR_POOL_LABEL    label shown on screen B (default: "tank")
-#                         set to "" to scan all pools and rotate them.
-#   ASUSTOR_POOL          name of the pool whose health is shown
-#                         (default: scan all pools, worst state wins)
+#
+# HDD temperatures are read from the kernel `drivetemp` hwmon driver
+# (CONFIG_SENSORS_DRIVETEMP). It returns -EAGAIN for drives in standby
+# without waking them, so HDD spindown is preserved. Load the module
+# at boot via /etc/modules-load.d/drivetemp.conf (see README).
 
 set -u
 
@@ -59,7 +59,6 @@ GREEN=$LEDS/asustor:green:status
 RED=$LEDS/asustor:red:status
 
 # --- Config (env-overridable) ---
-read -r -a HDDS <<< "${ASUSTOR_HDDS:-sda sdb sdc sdd sde sdf}"
 TEMP_HDD_WARN=${ASUSTOR_TEMP_HDD_WARN:-60}
 TEMP_HDD_CRIT=${ASUSTOR_TEMP_HDD_CRIT:-65}
 TEMP_CPU_WARN=${ASUSTOR_TEMP_CPU_WARN:-80}
@@ -75,8 +74,21 @@ find_hwmon() {
 		[ "$(cat "$f")" = "$name" ] && { dirname "$f"; return; }
 	done
 }
+
+# Discover ALL drivetemp instances (one per ATA disk) once at startup.
+# `drivetemp` returns -EAGAIN on standby drives without waking them, so
+# `cat temp1_input` simply fails on a sleeping drive and we skip it.
+find_drivetemp_dirs() {
+	local f
+	for f in /sys/class/hwmon/hwmon*/name; do
+		[ -r "$f" ] || continue
+		[ "$(cat "$f")" = "drivetemp" ] && dirname "$f"
+	done
+}
+
 MCU=$(find_hwmon asustor_mcu)
 CPU=$(find_hwmon k10temp)
+read -r -a HDD_HWMONS <<< "$(find_drivetemp_dirs | tr '\n' ' ')"
 
 # --- LCD helpers (cached to avoid redundant 9600-baud serial writes) ---
 LCD0_CUR=
@@ -144,10 +156,14 @@ pool_state() {
 
 max_hdd_temp() {
 	local maxt=0 t d
-	for d in "${HDDS[@]}"; do
-		t=$(smartctl -A -n standby "/dev/$d" 2>/dev/null \
-			| awk '/^194 Temperature/ {print $10; exit}')
-		[ -n "$t" ] && [ "$t" -gt "$maxt" ] && maxt=$t
+	for d in "${HDD_HWMONS[@]}"; do
+		[ -n "$d" ] || continue
+		# `drivetemp` returns errno (EAGAIN) on standby drives; cat
+		# fails silently and we skip. Reported value is millidegrees.
+		t=$(cat "$d/temp1_input" 2>/dev/null) || continue
+		[ -n "$t" ] || continue
+		t=$((t / 1000))
+		[ "$t" -gt "$maxt" ] && maxt=$t
 	done
 	echo "$maxt"
 }
