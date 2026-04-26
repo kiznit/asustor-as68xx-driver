@@ -1,0 +1,36 @@
+[Unit]
+Description=Asustor AS68xxT front-panel status LED + LCD daemon
+Documentation=https://github.com/kiznit/asustor-as68xx-driver
+ConditionPathExists=/sys/class/leds/asustor:green:status
+ConditionPathExists=/sys/devices/platform/asustor_lcm
+
+# Bring up early so the LCD shows boot progress for as much of the
+# boot as possible. The daemon polls `systemctl is-system-running`
+# itself for the boot/ready transition, so we don't gate on any
+# late-boot target here.
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/asustor-status
+ExecStart=/usr/local/sbin/asustor-status
+# systemd will SIGTERM us on stop; the trap inside the script handles
+# the shutdown LCD/LED phase. Generous TimeoutStopSec so a few
+# unit-stop lines render before the final SIGKILL.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=25s
+Restart=on-failure
+RestartSec=5
+# Hardening
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/sys/class/leds /sys/devices/platform/asustor_lcm /sys/class/hwmon
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
