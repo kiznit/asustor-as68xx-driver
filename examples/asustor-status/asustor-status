@@ -272,7 +272,7 @@ phase_ready() {
 			case $((screen % 3)) in
 				0) lcd0 "Pool: ${POOL_LABEL}"; lcd1 "$pool"           ;;
 				1) lcd0 "CPU: ${cput}C";       lcd1 "HDD: ${hddt}C"   ;;
-				2) lcd0 "PWM: ${pwm}/255";     lcd1 "Fan: ${rpm} RPM" ;;
+				2) lcd0 "PWM: $((pwm * 100 / 255))% (${pwm})"; lcd1 "Fan: ${rpm} RPM" ;;
 			esac
 			screen=$((screen + 1))
 		fi
