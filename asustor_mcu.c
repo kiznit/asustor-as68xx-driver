@@ -50,8 +50,10 @@
 /* MCU communication parameters */
 #define MCU_SERIAL_PORT		"/dev/ttyS1"
 #define MCU_BAUD_RATE		B115200
-#define MCU_RX_LEN		6	/* expected response length */
-#define MCU_RESP_TIMEOUT_MS	500
+#define MCU_RX_LEN		6	/* reply length for "get" commands */
+#define MCU_ACK_LEN		3	/* reply length for "set" commands */
+#define MCU_RESP_TIMEOUT_MS	20	/* deadline waiting for a reply */
+#define MCU_RESP_POLL_US	1000	/* poll interval while waiting for bytes */
 #define MCU_FAN_DEFAULT_PWM	0x55
 
 struct asustor_mcu {
@@ -115,77 +117,66 @@ static void mcu_serial_close(struct file *f)
 }
 
 /*
- * Discard any bytes currently queued in the MCU RX buffer. The tty was
- * opened with O_NONBLOCK so kernel_read() returns -EAGAIN (or 0) when no
- * data is available. We call this after "set" commands so the ack the
- * MCU emits for them doesn't show up in the next "get" response.
+ * Send a command and read the MCU's reply.
+ *
+ * "Get" commands (resp != NULL) reply with a full 6-byte frame.
+ * "Set" commands (resp == NULL) reply with a short 3-byte ack.
+ * The caller's resp pointer tells us which kind we sent, so we know
+ * exactly how many bytes to consume -- no need to time-out short reads.
+ *
+ * The tty was opened O_NONBLOCK, so kernel_read() returns -EAGAIN when no
+ * data is available. We poll on a ~1 ms tick. Typical round-trips are a
+ * few ms (measured 1.4-2 ms for GETs on a Rembrandt board), well under
+ * the timeout -- important for any tight loop hammering the MCU (e.g. a
+ * software LED blink).
  */
-static void mcu_drain_rx(struct asustor_mcu *mcu)
-{
-	struct file *f = mcu->tty_filp;
-	u8 buf[16];
-	loff_t pos = 0;
-	int ret;
-
-	if (IS_ERR_OR_NULL(f))
-		return;
-	do {
-		ret = kernel_read(f, buf, sizeof(buf), &pos);
-	} while (ret > 0);
-}
-
 static int mcu_send_cmd(struct asustor_mcu *mcu, const u8 *cmd, int cmd_len,
 			u8 *resp, int resp_len)
 {
 	struct file *f = mcu->tty_filp;
+	u8 ack[MCU_ACK_LEN];
+	u8 *buf;
+	int len;
 	loff_t pos = 0;
+	unsigned long deadline;
+	int got = 0;
 	int ret;
-	int i;
 
 	if (IS_ERR_OR_NULL(f))
 		return -ENODEV;
 
-	/* Write command */
+	if (resp && resp_len > 0) {
+		buf = resp;
+		len = resp_len;
+		memset(resp, 0, resp_len);
+	} else {
+		buf = ack;
+		len = MCU_ACK_LEN;
+	}
+
 	ret = kernel_write(f, cmd, cmd_len, &pos);
 	if (ret < 0)
 		return ret;
 	if (ret != cmd_len)
 		return -EIO;
 
-	/*
-	 * "Set" commands (resp == NULL) still trigger an MCU ack. Sleep
-	 * briefly to let it land, then drain the RX buffer so it doesn't
-	 * contaminate the next "get" we issue.
-	 */
-	if (!resp || resp_len == 0) {
-		msleep(MCU_RESP_TIMEOUT_MS);
-		mcu_drain_rx(mcu);
-		return 0;
-	}
-
-	/* Wait for response */
-	msleep(MCU_RESP_TIMEOUT_MS);
-
-	/*
-	 * Read response in one go: by now MCU_RESP_TIMEOUT_MS has elapsed
-	 * since the write, so the full response should already be buffered
-	 * in the tty. If we get a short read, sleep once more and pick up
-	 * the rest. Avoids the per-byte VTIME=500ms penalty under load.
-	 */
 	pos = 0;
-	memset(resp, 0, resp_len);
-	i = 0;
-	ret = kernel_read(f, resp, resp_len, &pos);
-	if (ret > 0)
-		i = ret;
-	if (i < resp_len) {
-		msleep(MCU_RESP_TIMEOUT_MS);
-		ret = kernel_read(f, resp + i, resp_len - i, &pos);
-		if (ret > 0)
-			i += ret;
+	deadline = jiffies + msecs_to_jiffies(MCU_RESP_TIMEOUT_MS);
+	while (got < len) {
+		ret = kernel_read(f, buf + got, len - got, &pos);
+		if (ret > 0) {
+			got += ret;
+			continue;
+		}
+		if (time_after(jiffies, deadline))
+			break;
+		usleep_range(MCU_RESP_POLL_US, 2 * MCU_RESP_POLL_US);
 	}
 
-	return i;	/* return number of bytes read */
+	if (resp && resp_len > 0)
+		return got;		/* caller validates length */
+
+	return (got == MCU_ACK_LEN) ? 0 : -EIO;
 }
 
 static int mcu_cmd_locked(struct asustor_mcu *mcu, const u8 *cmd, int cmd_len,
