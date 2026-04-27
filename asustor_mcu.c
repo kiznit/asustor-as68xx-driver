@@ -355,8 +355,17 @@ static const struct hwmon_chip_info asustor_mcu_hwmon_chip_info = {
 struct mcu_led {
 	struct led_classdev cdev;
 	u8 base_val;	/* MCU OFF byte — add MCU_LED_MODE_* for other states */
+	bool blinking;	/* true if MCU is currently in a hardware blink mode */
 };
 
+/*
+ * The MCU keeps a single state per LED, so any subsequent ON/OFF write
+ * silently cancels an active hardware blink. The kernel LED core (and
+ * userspace via sysfs) routinely calls brightness_set(1) right after
+ * blink_set() — see issue #10. Track whether we last programmed a blink
+ * mode and absorb any non-zero brightness write while the LED is blinking;
+ * a brightness=0 write still takes effect (turn the LED off, exit blink).
+ */
 static int mcu_led_brightness_set(struct led_classdev *cdev,
 				  enum led_brightness brightness)
 {
@@ -366,8 +375,15 @@ static int mcu_led_brightness_set(struct led_classdev *cdev,
 		     led->base_val + mode };
 	int ret;
 
+	if (brightness && led->blinking)
+		return 0;
+
 	ret = mcu_cmd_locked(mcu_data, cmd, sizeof(cmd), NULL, 0);
-	return ret < 0 ? ret : 0;
+	if (ret < 0)
+		return ret;
+
+	led->blinking = false;
+	return 0;
 }
 
 /* MCU hardware blink speeds — symmetric 50% duty cycle, measured on AS6806T */
@@ -416,7 +432,11 @@ static int mcu_led_blink_set(struct led_classdev *cdev,
 	cmd[2] = led->base_val + mcu_blink_speeds[best].mode;
 
 	ret = mcu_cmd_locked(mcu_data, cmd, sizeof(cmd), NULL, 0);
-	return ret < 0 ? ret : 0;
+	if (ret < 0)
+		return ret;
+
+	led->blinking = true;
+	return 0;
 }
 
 static struct mcu_led mcu_leds[] = {
