@@ -347,6 +347,8 @@ struct mcu_led {
 	struct led_classdev cdev;
 	u8 base_val;	/* MCU OFF byte — add MCU_LED_MODE_* for other states */
 	bool blinking;	/* true if MCU is currently in a hardware blink mode */
+	bool last_valid;	/* @last_brightness reflects a real prior write */
+	enum led_brightness last_brightness;	/* last value we programmed */
 };
 
 /*
@@ -356,6 +358,14 @@ struct mcu_led {
  * blink_set() — see issue #10. Track whether we last programmed a blink
  * mode and absorb any non-zero brightness write while the LED is blinking;
  * a brightness=0 write still takes effect (turn the LED off, exit blink).
+ *
+ * Userspace status daemons commonly re-assert the same brightness on every
+ * poll cycle (e.g. asustor-status writing brightness=1 to green:status and
+ * brightness=0 to red:status every few seconds, regardless of any state
+ * change). Each MCU command costs a serial round-trip and risks a -EIO
+ * timeout if the MCU is busy with concurrent work (LCD frames, fan PWM).
+ * Skip the round-trip entirely when the requested brightness already
+ * matches what we last programmed and we are not in a blink mode.
  */
 static int mcu_led_brightness_set(struct led_classdev *cdev,
 				  enum led_brightness brightness)
@@ -369,10 +379,16 @@ static int mcu_led_brightness_set(struct led_classdev *cdev,
 	if (brightness && led->blinking)
 		return 0;
 
+	if (led->last_valid && !led->blinking &&
+	    led->last_brightness == brightness)
+		return 0;
+
 	ret = mcu_cmd_locked(mcu_data, cmd, sizeof(cmd), NULL, 0);
 	if (ret < 0)
 		return ret;
 
+	led->last_brightness = brightness;
+	led->last_valid = true;
 	led->blinking = false;
 	return 0;
 }
